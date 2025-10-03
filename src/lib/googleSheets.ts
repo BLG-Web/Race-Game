@@ -1,86 +1,85 @@
-// Google Sheets API helper for token validation
-const GOOGLE_API_KEY = 'AIzaSyB3JwuNUJb3_UrRp92QMsBuNZcxGlBunPE';
-const SHEET_ID = '1ABNrgqRAy_LbiAZAFVW2L4Cr1GbR0Z-x4nQacCMZS3E';
-const SHEET_NAME = 'TOPI JERAMI';
+// Google Apps Script API helper for token validation
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVEkyDtRvMhCpu5Ecmda90xBEdmO602N3tJSjceq-UHVQN1Bn_FwItoa38EgYoG8Sy/exec';
 
 export interface TokenData {
   userid: string;
   token: string;
   type: string;
-  rowIndex: number;
+  rowNumber: number;
+}
+
+export interface ValidationResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  data?: TokenData;
+  debug?: any;
 }
 
 export async function validateTokenFromSheet(userId: string, token: string): Promise<boolean> {
   try {
-    const range = `${SHEET_NAME}!B:D`; // Read columns B, C, D (userid, token, type)
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${GOOGLE_API_KEY}`;
+    console.log('Validating token via Apps Script:', { userId, token });
     
-    const response = await fetch(url);
+    // Method 1: POST request (recommended)
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userid: userId.trim(),
+        token: token.trim()
+      })
+    });
     
     if (!response.ok) {
-      console.error('Google Sheets API error:', response.status, response.statusText);
+      console.error('Apps Script API error:', response.status, response.statusText);
+      
+      // Fallback to GET request
+      const getUrl = `${APPS_SCRIPT_URL}?action=validate&userid=${encodeURIComponent(userId.trim())}&token=${encodeURIComponent(token.trim())}`;
+      console.log('Trying GET fallback:', getUrl);
+      
+      const getResponse = await fetch(getUrl);
+      
+      if (!getResponse.ok) {
+        console.error('Apps Script GET fallback also failed:', getResponse.status);
+        return false;
+      }
+      
+      const getData = await getResponse.json() as ValidationResponse;
+      console.log('Apps Script GET response:', getData);
+      
+      return getData.success === true;
+    }
+    
+    const data = await response.json() as ValidationResponse;
+    console.log('Apps Script POST response:', data);
+    
+    if (data.success) {
+      console.log('Token validation successful:', data.data);
+      return true;
+    } else {
+      console.log('Token validation failed:', data.error);
       return false;
     }
     
-    const data = await response.json();
-    const rows = data.values || [];
+  } catch (error) {
+    console.error('Error validating token via Apps Script:', error);
     
-    // Skip header row (row 1) and check from row 2 onwards
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      const sheetUserId = row[0]?.trim(); // Column B
-      const sheetToken = row[1]?.trim();  // Column C
+    // Final fallback: try GET request
+    try {
+      const getUrl = `${APPS_SCRIPT_URL}?action=validate&userid=${encodeURIComponent(userId.trim())}&token=${encodeURIComponent(token.trim())}`;
+      console.log('Final fallback GET request:', getUrl);
       
-      // Check if both userid and token match
-      if (sheetUserId === userId.trim() && sheetToken === token.trim()) {
-        console.log('Token validation successful:', { userId, token, type: row[2] });
-        return true;
-      }
+      const response = await fetch(getUrl);
+      const data = await response.json() as ValidationResponse;
+      
+      console.log('Final fallback response:', data);
+      return data.success === true;
+      
+    } catch (fallbackError) {
+      console.error('All validation methods failed:', fallbackError);
+      return false;
     }
-    
-    console.log('Token validation failed: No matching userid/token found');
-    return false;
-    
-  } catch (error) {
-    console.error('Error validating token from Google Sheets:', error);
-    return false;
-  }
-}
-
-export async function getAllTokensFromSheet(): Promise<TokenData[]> {
-  try {
-    const range = `${SHEET_NAME}!B:D`;
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${GOOGLE_API_KEY}`;
-    
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      console.error('Google Sheets API error:', response.status, response.statusText);
-      return [];
-    }
-    
-    const data = await response.json();
-    const rows = data.values || [];
-    
-    const tokens: TokenData[] = [];
-    
-    // Skip header row and process data
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (row[0] && row[1]) { // Make sure userid and token exist
-        tokens.push({
-          userid: row[0].trim(),
-          token: row[1].trim(),
-          type: row[2]?.trim() || '',
-          rowIndex: i + 1 // 1-based row index
-        });
-      }
-    }
-    
-    return tokens;
-    
-  } catch (error) {
-    console.error('Error getting tokens from Google Sheets:', error);
-    return [];
   }
 }
