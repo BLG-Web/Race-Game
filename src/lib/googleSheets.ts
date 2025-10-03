@@ -20,40 +20,23 @@ export async function validateTokenFromSheet(userId: string, token: string): Pro
   try {
     console.log('Validating token via Apps Script:', { userId, token });
     
-    // Method 1: POST request (recommended)
-    const response = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        userid: userId.trim(),
-        token: token.trim()
-      })
+    // Try GET request only (avoid CORS preflight)
+    const getUrl = `${APPS_SCRIPT_URL}?action=validate&userid=${encodeURIComponent(userId.trim())}&token=${encodeURIComponent(token.trim())}`;
+    console.log('Apps Script GET request:', getUrl);
+    
+    const response = await fetch(getUrl, {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-cache'
     });
     
     if (!response.ok) {
-      console.error('Apps Script API error:', response.status, response.statusText);
-      
-      // Fallback to GET request
-      const getUrl = `${APPS_SCRIPT_URL}?action=validate&userid=${encodeURIComponent(userId.trim())}&token=${encodeURIComponent(token.trim())}`;
-      console.log('Trying GET fallback:', getUrl);
-      
-      const getResponse = await fetch(getUrl);
-      
-      if (!getResponse.ok) {
-        console.error('Apps Script GET fallback also failed:', getResponse.status);
-        return false;
-      }
-      
-      const getData = await getResponse.json() as ValidationResponse;
-      console.log('Apps Script GET response:', getData);
-      
-      return getData.success === true;
+      console.error('Apps Script GET request failed:', response.status, response.statusText);
+      return false;
     }
     
     const data = await response.json() as ValidationResponse;
-    console.log('Apps Script POST response:', data);
+    console.log('Apps Script GET response:', data);
     
     if (data.success) {
       console.log('Token validation successful:', data.data);
@@ -65,21 +48,6 @@ export async function validateTokenFromSheet(userId: string, token: string): Pro
     
   } catch (error) {
     console.error('Error validating token via Apps Script:', error);
-    
-    // Final fallback: try GET request
-    try {
-      const getUrl = `${APPS_SCRIPT_URL}?action=validate&userid=${encodeURIComponent(userId.trim())}&token=${encodeURIComponent(token.trim())}`;
-      console.log('Final fallback GET request:', getUrl);
-      
-      const response = await fetch(getUrl);
-      const data = await response.json() as ValidationResponse;
-      
-      console.log('Final fallback response:', data);
-      return data.success === true;
-      
-    } catch (fallbackError) {
-      console.error('All validation methods failed:', fallbackError);
-      return false;
-    }
+    return false;
   }
 }
