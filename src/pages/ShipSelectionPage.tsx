@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Anchor, Ship as ShipIcon, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Ship } from '../lib/supabase';
+import { validateTokenFromSheet } from '../lib/googleSheets';
 
 interface ShipSelectionPageProps {
   onEnterArena: (userId: string, shipId: string) => void;
@@ -42,26 +43,20 @@ export function ShipSelectionPage({ onEnterArena }: ShipSelectionPageProps) {
     setError('');
 
     try {
-      const { data, error: dbError } = await supabase
-        .from('tokens')
-        .select('*')
-        .eq('user_id', userId.trim())
-        .eq('token', token.trim())
-        .eq('is_active', true)
-        .maybeSingle();
+      // Validate token directly from Google Sheets
+      const isValid = await validateTokenFromSheet(userId.trim(), token.trim());
 
-      if (dbError) {
-        setError('Gagal validasi token');
-        setIsValid(false);
-      } else if (!data) {
-        setError('User ID atau Token tidak valid!');
-        setIsValid(false);
-      } else {
+      if (isValid) {
         setIsValid(true);
         setError('');
+        console.log('Token validation successful!');
+      } else {
+        setError('User ID atau Token tidak valid! Pastikan data sesuai dengan Google Sheet.');
+        setIsValid(false);
       }
     } catch (err) {
-      setError('Terjadi kesalahan saat validasi');
+      console.error('Validation error:', err);
+      setError('Terjadi kesalahan saat validasi. Coba lagi dalam beberapa saat.');
       setIsValid(false);
     } finally {
       setIsValidating(false);
