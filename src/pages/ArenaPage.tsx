@@ -23,23 +23,38 @@ export function ArenaPage({ userId, shipId, onBackToShipSelection }: ArenaPagePr
   const [startTime, setStartTime] = useState<number | null>(null);
 
   useEffect(() => {
-    initializeArena();
-    subscribeToUpdates();
+    let cleanup: (() => void) | null = null;
+    
+    const setup = async () => {
+      let session = await getOrCreateWaitingSession();
+
+      if (!session) {
+        session = await createNewSession();
+      }
+
+      if (session) {
+        console.log('🎮 Initializing arena with session:', session.id);
+        setCurrentSession(session);
+        await joinSession(session.id);
+        await loadParticipants(session.id);
+        
+        // Setup real-time subscription AFTER we have session ID
+        cleanup = subscribeToUpdates(session.id);
+      }
+    };
+    
+    setup();
+    
+    return () => {
+      // Cleanup subscription on unmount
+      if (cleanup) {
+        console.log('🛑 Component unmounting, cleaning up...');
+        cleanup();
+      }
+    };
   }, []);
 
-  const initializeArena = async () => {
-    let session = await getOrCreateWaitingSession();
 
-    if (!session) {
-      session = await createNewSession();
-    }
-
-    if (session) {
-      setCurrentSession(session);
-      await joinSession(session.id);
-      loadParticipants(session.id);
-    }
-  };
 
   const getOrCreateWaitingSession = async () => {
     const { data } = await supabase
@@ -65,16 +80,33 @@ export function ArenaPage({ userId, shipId, onBackToShipSelection }: ArenaPagePr
   };
 
   const joinSession = async (sessionId: string) => {
+    // Check if user already joined this session
+    const { data: existingParticipant } = await supabase
+      .from('race_participants')
+      .select('*')
+      .eq('race_session_id', sessionId)
+      .eq('user_email', user?.email)
+      .maybeSingle();
+
+    if (existingParticipant) {
+      console.log('User already in session, using existing participant');
+      setMyParticipant(existingParticipant);
+      return;
+    }
+
     const existingParticipants = await supabase
       .from('race_participants')
       .select('lane_number')
       .eq('race_session_id', sessionId)
       .order('lane_number');
 
-    const usedLanes = existingParticipants.data?.map((p) => p.lane_number) || [];
+    const usedLanes = existingParticipants.data?.map((p: any) => p.lane_number) || [];
     const availableLane = [1, 2, 3, 4, 5].find((lane) => !usedLanes.includes(lane));
 
-    if (!availableLane) return;
+    if (!availableLane) {
+      console.log('No available lanes');
+      return;
+    }
 
     const { data } = await supabase
       .from('race_participants')
@@ -94,25 +126,39 @@ export function ArenaPage({ userId, shipId, onBackToShipSelection }: ArenaPagePr
   };
 
   const loadParticipants = async (sessionId: string) => {
-    const { data } = await supabase
-      .from('race_participants')
-      .select('*, ships(*)')
-      .eq('race_session_id', sessionId)
-      .order('lane_number');
+    try {
+      console.log('🔄 Loading participants for session:', sessionId);
+      const { data, error } = await supabase
+        .from('race_participants')
+        .select('*, ships(*)')
+        .eq('race_session_id', sessionId)
+        .order('lane_number');
 
-    if (data) {
-      setParticipants(data as any);
+      if (error) {
+        console.error('❌ Error loading participants:', error);
+        return;
+      }
+
+      if (data) {
+        console.log('👥 Loaded participants:', data.length, 'players');
+        setParticipants(data as any);
+      }
+    } catch (error) {
+      console.error('💥 Failed to load participants:', error);
     }
   };
 
-  const subscribeToUpdates = () => {
+  const subscribeToUpdates = (sessionId: string) => {
+    console.log('Setting up realtime subscription for session:', sessionId);
+    
     const channel = supabase
-      .channel('arena_updates')
+      .channel(`arena_updates_${sessionId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'race_sessions' },
         (payload) => {
-          if (payload.new) {
+          console.log('🏁 Race session updated:', payload);
+          if (payload.new && (payload.new as any).id === sessionId) {
             setCurrentSession(payload.new as RaceSession);
           }
         }
@@ -120,15 +166,23 @@ export function ArenaPage({ userId, shipId, onBackToShipSelection }: ArenaPagePr
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'race_participants' },
-        () => {
-          if (currentSession) {
-            loadParticipants(currentSession.id);
-          }
+        (payload) => {
+          console.log('🏃‍♂️ Race participants updated:', payload);
+          // Always reload participants for this session
+          loadParticipants(sessionId);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('📡 Subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to real-time updates!');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error('❌ Subscription failed:', status);
+        }
+      });
 
     return () => {
+      console.log('🧹 Cleaning up subscription for session:', sessionId);
       channel.unsubscribe();
     };
   };
@@ -255,6 +309,12 @@ export function ArenaPage({ userId, shipId, onBackToShipSelection }: ArenaPagePr
             {participants.length < 5 && (
               <p className="text-sm mt-2">Butuh {5 - participants.length} pemain lagi untuk mulai race</p>
             )}
+            <p className="text-xs mt-2 opacity-75">
+              ✨ Updates real-time - tidak perlu refresh!
+            </p>
+            <p className="text-xs mt-1 opacity-50">
+              Debug: Session ID {currentSession?.id?.slice(-8)}
+            </p>
           </div>
         )}
 
