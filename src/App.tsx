@@ -1,8 +1,8 @@
 import { Flag, Trophy } from 'lucide-react';
-import { RaceTrack } from './components/RaceTrack';
+import { RaceTrack } from './components/OceanLane';
 import { TypingArea } from './components/TypingArea';
-import { Stats } from './components/Stats';
-import { ResultsModal } from './components/ResultsModal';
+import { Stats } from './components/RaceTypingArea';
+import { ResultsModal } from './components/RaceResults';
 import { useTypingGame } from './hooks/useTypingGame';
 
 function App() {
