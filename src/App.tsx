@@ -1,90 +1,80 @@
-import { Flag, Trophy } from 'lucide-react';
-import { RaceTrack } from './components/OceanLane';
-import { TypingArea } from './components/TypingArea';
-import { Stats } from './components/RaceTypingArea';
-import { ResultsModal } from './components/RaceResults';
-import { useTypingGame } from './hooks/useTypingGame';
+import { useState } from 'react';
+import { Shield } from 'lucide-react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { LoginPage } from './pages/LoginPage';
+import { ShipSelectionPage } from './pages/ShipSelectionPage';
+import { ArenaPage } from './pages/ArenaPage';
+import { AdminDashboard } from './pages/AdminDashboard';
 
-function App() {
-  const {
-    text,
-    currentIndex,
-    errors,
-    isRaceActive,
-    isRaceComplete,
-    timeElapsed,
-    wpm,
-    accuracy,
-    progress,
-    handleKeyPress,
-    startRace,
-    restartRace,
-  } = useTypingGame();
+type GameScreen = 'login' | 'ship-selection' | 'arena';
+
+function AppContent() {
+  const { user, loading, isAdmin } = useAuth();
+  const [currentScreen, setCurrentScreen] = useState<GameScreen>('ship-selection');
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedShipId, setSelectedShipId] = useState('');
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-cyan-800 to-blue-900 flex items-center justify-center">
+        <div className="text-white text-2xl">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  const handleEnterArena = (userId: string, shipId: string) => {
+    setSelectedUserId(userId);
+    setSelectedShipId(shipId);
+    setCurrentScreen('arena');
+  };
+
+  const handleBackToShipSelection = () => {
+    setCurrentScreen('ship-selection');
+    setSelectedUserId('');
+    setSelectedShipId('');
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <header className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <Trophy className="w-12 h-12 text-yellow-400" />
-            <h1 className="text-5xl font-bold text-white tracking-tight">
-              Type<span className="text-blue-400">Racer</span>
-            </h1>
-            <Flag className="w-12 h-12 text-green-400" />
-          </div>
-          <p className="text-gray-300 text-lg">Race to the finish line with your typing speed!</p>
-        </header>
+    <div className="relative">
+      {isAdmin && currentScreen === 'ship-selection' && (
+        <button
+          onClick={() => setShowAdminDashboard(true)}
+          className="fixed top-4 right-4 z-40 bg-yellow-500 hover:bg-yellow-600 text-gray-900 p-3 rounded-full shadow-lg transition-all"
+          title="Admin Dashboard"
+        >
+          <Shield className="w-6 h-6" />
+        </button>
+      )}
 
-        <Stats wpm={wpm} accuracy={accuracy} timeElapsed={timeElapsed} errors={errors} />
+      {currentScreen === 'ship-selection' && (
+        <ShipSelectionPage onEnterArena={handleEnterArena} />
+      )}
 
-        <div className="mb-6">
-          <RaceTrack progress={progress} />
-        </div>
-
-        <TypingArea
-          text={text}
-          currentIndex={currentIndex}
-          onKeyPress={handleKeyPress}
-          isRaceActive={isRaceActive}
+      {currentScreen === 'arena' && (
+        <ArenaPage
+          userId={selectedUserId}
+          shipId={selectedShipId}
+          onBackToShipSelection={handleBackToShipSelection}
         />
+      )}
 
-        <div className="mt-6 flex justify-center gap-4">
-          {!isRaceActive && !isRaceComplete && (
-            <button
-              onClick={startRace}
-              className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 px-8 rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center gap-2 text-lg"
-            >
-              <Flag className="w-6 h-6" />
-              Start Race
-            </button>
-          )}
-
-          {isRaceActive && (
-            <button
-              onClick={restartRace}
-              className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold py-4 px-8 rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:scale-105 text-lg"
-            >
-              Restart
-            </button>
-          )}
-        </div>
-
-        {isRaceComplete && (
-          <ResultsModal
-            wpm={wpm}
-            accuracy={accuracy}
-            timeElapsed={timeElapsed}
-            errors={errors}
-            onClose={() => restartRace()}
-            onRestart={restartRace}
-          />
-        )}
-
-        <footer className="mt-12 text-center text-gray-400 text-sm">
-          <p>Type accurately and quickly to win the race!</p>
-        </footer>
-      </div>
+      {showAdminDashboard && (
+        <AdminDashboard onClose={() => setShowAdminDashboard(false)} />
+      )}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
